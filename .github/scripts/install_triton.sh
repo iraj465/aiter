@@ -1,4 +1,5 @@
 #!/bin/bash
+# End-user path (setup.py, README). CI uses .github/requirements/triton-test.txt.
 set -e
 
 pip uninstall -y triton pytorch-triton pytorch-triton-rocm triton-rocm amd-triton || true

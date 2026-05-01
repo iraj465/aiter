@@ -80,6 +80,7 @@ def _is_triton_installed():
         "pytorch-triton",
         "pytorch-triton-rocm",
         "triton-rocm",
+        "amd-triton",
     ]:
         try:
             return pkg, pkg_version(pkg)
