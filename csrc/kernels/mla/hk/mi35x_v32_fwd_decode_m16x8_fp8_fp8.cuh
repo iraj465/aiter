@@ -14,7 +14,7 @@
 #if defined(__gfx950__)
 template <typename T>
 __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
-    amdgpu_num_vgpr(72))) void kn_mi35x_mla_v32_fwd_decode_m16x8_fp8_fp8(HkMlaDecodeFwdParams<T> params)
+    amdgpu_num_vgpr(68))) void kn_mi35x_mla_v32_fwd_decode_m16x8_fp8_fp8(HkMlaDecodeFwdParams<T> params)
 {
     using q_t     = T::q_t;
     using kv_t    = T::kv_t;
@@ -721,17 +721,9 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
                     {
                         __builtin_amdgcn_s_setprio(3);
                     }
-                    else if constexpr(i.value == 2)
+                    else if constexpr((i.value > 1) && ((i.value & 1) == 1))
                     {
-                        __builtin_amdgcn_s_setprio(2);
-                    }
-                    else if constexpr(i.value == 4)
-                    {
-                        __builtin_amdgcn_s_setprio(1);
-                    }
-                    else if constexpr(i.value == 7)
-                    {
-                        __builtin_amdgcn_s_setprio(0);
+                        __builtin_amdgcn_s_setprio((num_pv_iter - 1 - i.value) / 2);
                     }
 
                     constexpr uint32_t kCol0    = tile_idx * T::kBlockK * 2;
