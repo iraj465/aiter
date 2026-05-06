@@ -230,12 +230,12 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
 
         if(kv_len < T::kBlockN)
         {
-            kv_manager.template async_load_k<false, true>(
+            kv_manager.template async_load_k<0, false, true>(
                 p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld, kv_ld_col_base);
         }
         else
         {
-            kv_manager.template async_load_k<false, false>(
+            kv_manager.template async_load_k<0, false, false>(
                 p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld, kv_ld_col_base);
         }
 
@@ -287,7 +287,7 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
                 row_kv_ld_next     = row_kv_ld_next_next;
             }
 
-            kv_manager.template async_load_k_tile<0, kIsGlobalLast, kCheckBoundaryNext>(
+            kv_manager.template async_load_k_tile<0, 0, kIsGlobalLast, kCheckBoundaryNext>(
                 p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next, kv_ld_col_base);
 
             // GEMM on NoPE
@@ -315,7 +315,7 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
                     kv_manager.template load_k_to_gpr<16, (tile_idx + 1) * T::kBlockK>(
                         kv_1_bot, p_lds_kv_curr);
 
-                    kv_manager.template async_load_k_tile<(idx.value + 1) * 64,
+                    kv_manager.template async_load_k_tile<0, (idx.value + 1) * 64,
                                                         kIsGlobalLast,
                                                         kCheckBoundaryNext>(
                         p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next, kv_ld_col_base);

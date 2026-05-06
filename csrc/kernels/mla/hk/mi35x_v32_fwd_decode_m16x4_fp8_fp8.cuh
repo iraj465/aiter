@@ -260,17 +260,17 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
         // and bumping col_base by 32 (=kNumSubBlockCols).
         if(kv_len < T::kBlockN)
         {
-            kv_manager.template async_load_k<false, true>(
-                p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld, kv_ld_col_base);
-            kv_manager.template async_load_k<false, true>(
-                p_lds_kv_curr, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld, kv_ld_col_base + 32);
+            kv_manager.template async_load_k<0, false, true>(
+                p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld[0], kv_ld_col_base);
+            kv_manager.template async_load_k<0, false, true>(
+                p_lds_kv_curr, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld[0], kv_ld_col_base + 32);
         }
         else
         {
-            kv_manager.template async_load_k<false, false>(
-                p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld, kv_ld_col_base);
-            kv_manager.template async_load_k<false, false>(
-                p_lds_kv_curr, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld, kv_ld_col_base + 32);
+            kv_manager.template async_load_k<0, false, false>(
+                p_lds_kv_curr, warp_idx, params.kv_buffer, row_kv_ld[0], kv_ld_col_base);
+            kv_manager.template async_load_k<0, false, false>(
+                p_lds_kv_curr, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld[0], kv_ld_col_base + 32);
         }
 
         int32_t row_kv_ld_next_next[1] = {-1};
@@ -326,10 +326,10 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
                 row_kv_ld_next[0] = row_kv_ld_next_next[0];
             }
 
-            kv_manager.template async_load_k_tile<0, kIsGlobalLast, kCheckBoundaryNext>(
-                p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next, kv_ld_col_base);
-            kv_manager.template async_load_k_tile<0, kIsGlobalLast, kCheckBoundaryNext>(
-                p_lds_kv_next_warp_p1, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld_next, kv_ld_col_base + 32);
+            kv_manager.template async_load_k_tile<0, 0, kIsGlobalLast, kCheckBoundaryNext>(
+                p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next[0], kv_ld_col_base);
+            kv_manager.template async_load_k_tile<0, 0, kIsGlobalLast, kCheckBoundaryNext>(
+                p_lds_kv_next_warp_p1, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld_next[0], kv_ld_col_base + 32);
 
             // GEMM on NoPE
             constexpr uint32_t num_nope_iter = (k_q_nope_end + 1 - k_q_nope_begin) / 4;
@@ -356,14 +356,14 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
                     kv_manager.template load_k_to_gpr<16, (tile_idx + 1) * T::kBlockK>(
                         kv_1_bot, p_lds_kv_curr);
 
-                    kv_manager.template async_load_k_tile<(idx.value + 1) * 64,
+                    kv_manager.template async_load_k_tile<0, (idx.value + 1) * 64,
                                                           kIsGlobalLast,
                                                           kCheckBoundaryNext>(
-                        p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next, kv_ld_col_base);
-                    kv_manager.template async_load_k_tile<(idx.value + 1) * 64,
+                        p_lds_kv_next_warp, warp_idx, params.kv_buffer, row_kv_ld_next[0], kv_ld_col_base);
+                    kv_manager.template async_load_k_tile<0, (idx.value + 1) * 64,
                                                           kIsGlobalLast,
                                                           kCheckBoundaryNext>(
-                        p_lds_kv_next_warp_p1, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld_next, kv_ld_col_base + 32);
+                        p_lds_kv_next_warp_p1, warp_idx + T::kNumWarps, params.kv_buffer, row_kv_ld_next[0], kv_ld_col_base + 32);
 
                     asm volatile("s_waitcnt lgkmcnt(2)");
                     if constexpr(idx.value == 0)
