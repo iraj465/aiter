@@ -1060,6 +1060,13 @@ class KvManager8bitsV3
         kNumBytesPer2SubBlocksWithPadding * kNum2SubBlocks;                 // 264 * kNum2SubBlocks
     static constexpr uint32_t kNumRowsPerWarp = kNumSubBlockRows * 2;       // 8
     static constexpr uint32_t kNumWarpsPerCol = 32 / kNumRowsPerWarp;       // 4 (rows per pass / 8)
+    // Slot stride between consecutive row-passes within a col-block. Equals
+    // kNumWarpsPerCol * kNumColStripsPerBlock = 4 * 2 = 8 slots, i.e. one full row-pass
+    // covers all warp-rows × all col-strips before the next row-pass begins. Constant
+    // across kNumWarps so row-strip and col-strip slot offsets stay independent (col-strip
+    // stride is 4 slots; row-strip stride must differ to avoid collision when both are used,
+    // as in m16x4 kBlockN=64).
+    static constexpr uint32_t kRowPassSlotStride = kNumWarpsPerCol * 2;     // 8
     static constexpr uint32_t kNumBytesPerThrPerRnd =
         4; // use buffer_load_dword which loads 4B each time.
     static constexpr uint32_t kNumThrPerSubBlockRow =
@@ -1091,17 +1098,21 @@ class KvManager8bitsV3
     //                                                    (For kBlockN=32 only 0/16 valid.)
     //   kColOffset is a multiple of 32, < kQkHeadDim -- picks the 32-col strip.
     // Layout B (per 64-col block): pass 1 of all warps comes after pass 0 of all warps.
-    //   pass = kRowOffset / 32                            -> +pass * kNumWarps * 264
+    //   pass = kRowOffset / 32                            -> +pass * kRowPassSlotStride * 264
     //   sub-block within pass = (kRowOffset % 32) / 16    -> +sub * 128
     //   64-col block index = kColOffset / 64              -> +block * kNumBytesPerBlock
     //   32-col strip within block = (kColOffset % 64) / 32 -> +strip * 4 * 264
+    // Row-strip stride uses constant 8 (not T::kNumWarps) so that row and col strips occupy
+    // independent slot bits: row -> slots {0,8}, col -> slots {0,4}. With kNumWarps=8 (m16x8)
+    // this matches the original kNumWarps stride; with kNumWarps=4 (m16x4) it avoids the
+    // collision where (row=32,col=0) and (row=0,col=32) would both land on slot+4.
     // The block stride must use kNumBytesPerBlock (which depends on kBlockN via
     // kNum2SubBlocks); collapsing it into (kColOffset/32)*4*264 only works when
     // kNum2SubBlocks == 8 (i.e., kBlockN == 32).
     template <uint32_t kRowOffset, uint32_t kColOffset>
     static constexpr uint32_t get_block_fixed_offset()
     {
-        return (kRowOffset / 32) * T::kNumWarps * kNumBytesPer2SubBlocksWithPadding +
+        return (kRowOffset / 32) * kRowPassSlotStride * kNumBytesPer2SubBlocksWithPadding +
                ((kRowOffset % 32) / 16) * kNumBytesPerSubBlock +
                (kColOffset / 64) * kNumBytesPerBlock +
                ((kColOffset % 64) / 32) * 4 * kNumBytesPer2SubBlocksWithPadding;
@@ -1140,10 +1151,13 @@ class KvManager8bitsV3
                (lane_idx % kNumThrPerSubBlockRow) * kNumBytesPerThrPerRnd;
     }
 
-    // Layout B: pass 1 of all warps lives after pass 0 of all warps. Callers requesting pass p
-    // pass `warp_idx + p * kNumWarps` to land in the right slot. m16x4 uses this for col-strip
-    // splitting (pass uses col_base+32); m16x8 kBlockN=64 uses it for row splitting (pass uses
-    // row+32). Stride per warp slot = 264 bytes (one 2-sub-block-with-padding).
+    // Layout B: pass 1 of all warps lives after pass 0 of all warps. Callers requesting a
+    // col-strip pass use `warp_idx + kNumWarps` (col offset = +4*264 in slot space); callers
+    // requesting a row-strip pass use the kRowOffset=32 template arg in get_block_fixed_offset
+    // and async_load_k_tile (row offset = +8*264 in slot space). m16x4 kBlockN=32 uses only
+    // col-strip; m16x8 kBlockN=64 uses only row-strip; m16x4 kBlockN=64 uses both, packed
+    // into the 16 available slots/col-block. Stride per warp slot = 264 bytes (one
+    // 2-sub-block-with-padding).
     __device__ __forceinline__ static uintptr_t get_p_lds_kv_warp_base(const int32_t warp_idx,
                                                                        const uintptr_t p_lds_kv)
     {
@@ -1211,7 +1225,7 @@ class KvManager8bitsV3
 
             const uintptr_t p_lds_kv_warp =
                 p_lds_kv_warp_base
-                + kPass * T::kNumWarps * kNumBytesPer2SubBlocksWithPadding
+                + kPass * kRowPassSlotStride * kNumBytesPer2SubBlocksWithPadding
                 + kBlockIdx * kNumBytesPerBlock
                 - kColOffset;
 
@@ -1328,7 +1342,7 @@ class KvManager8bitsV3
             //   pass         = row / 32
             //   sub_block    = (row % 32) / 16
             //   sub_row      = row % 4
-            const uint32_t row_phy = ((row / 32) * T::kNumWarps + (row % 16) / 4) * 8 +
+            const uint32_t row_phy = ((row / 32) * kRowPassSlotStride + (row % 16) / 4) * 8 +
                                      ((row % 32) / 16) * 4 +
                                      (row % 4);
             const uintptr_t p_lds_v_lane =

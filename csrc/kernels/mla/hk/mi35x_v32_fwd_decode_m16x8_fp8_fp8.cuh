@@ -617,7 +617,6 @@ __global__ __launch_bounds__(T::kNumThreads, T::kOccupancy) __attribute__((
             // into kv_0/kv_1. The iter-spanning LO load is hidden by the _hi mfmas plus
             // any tail work; the in-iter HI load is hidden by the 4 _lo mfmas + rescale.
             constexpr uint32_t num_pv_iter    = T::kVoHeadDim / (T::kBlockK * 2); // 8
-            constexpr uint32_t num_macro_iter = num_pv_iter / 2;                  // 4 (kept for s_setprio scaling)
 
             // PV scaler workaround: HW bug -- mfma blocks the following v_pk_* even with
             // no data dependency. Per sub-tile (4 vgprs) we split the rescale in half:
